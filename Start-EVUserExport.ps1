@@ -43,8 +43,8 @@ param(
 
     [datetime]$EndDate,
 
-    # Varsayılan olarak sadece Exchange posta kutusu arşivleri aranır. Hepsi için: -ArchiveType ''
-    [string]$ArchiveType = 'ExchangeMailbox'
+    # İsteğe bağlı arşiv tipi filtresi (örn: 'Exchange'). Boşsa tüm tipler aranır.
+    [string]$ArchiveType = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -100,9 +100,11 @@ if ($tokens.Count -eq 0) { throw 'Geçerli bir ad soyad girin.' }
 
 Write-Host "Arşivler taranıyor: '$AdSoyad' ..." -ForegroundColor Cyan
 
-$getArgs = @{}
-if ($ArchiveType) { $getArgs['ArchiveType'] = $ArchiveType }
-$allArchives = @(Get-EVArchive @getArgs)
+# Get-EVArchive'in parametreleri EV sürümüne göre değiştiği için filtre istemci tarafında uygulanır
+$allArchives = @(Get-EVArchive)
+if ($ArchiveType) {
+    $allArchives = @($allArchives | Where-Object { "$($_.ArchiveType)" -like "*$ArchiveType*" })
+}
 
 # Önce birebir eşleşme ("Ad Soyad" veya "Soyad, Ad"), yoksa tüm kelimeleri içerenler
 $reversed = $search
@@ -127,7 +129,7 @@ else {
 }
 
 if ($matches_.Count -eq 0) {
-    throw "'$AdSoyad' için arşiv bulunamadı. (Tip: '$ArchiveType'. Tüm tipler için -ArchiveType '' deneyin.)"
+    throw "'$AdSoyad' için arşiv bulunamadı ($($allArchives.Count) arşiv tarandı)."
 }
 
 if ($matches_.Count -eq 1) {
@@ -162,6 +164,18 @@ $exportArgs = @{
 if ($Format -eq 'PST') { $exportArgs['MaxPSTSizeMB'] = $MaxPSTSizeMB }
 if ($PSBoundParameters.ContainsKey('StartDate')) { $exportArgs['StartDate'] = $StartDate }
 if ($PSBoundParameters.ContainsKey('EndDate')) { $exportArgs['EndDate'] = $EndDate }
+
+# Bu EV sürümünde Export-EVArchive'in desteklemediği parametreleri ayıkla
+$supported = (Get-Command Export-EVArchive).Parameters.Keys
+foreach ($key in @($exportArgs.Keys)) {
+    if ($supported -notcontains $key) {
+        if ($key -in 'ArchiveId', 'OutputDirectory') {
+            throw "Export-EVArchive '-$key' parametresini desteklemiyor. Desteklenenler: $($supported -join ', ')"
+        }
+        Write-Warning "Export-EVArchive '-$key' parametresini desteklemiyor, atlanıyor."
+        $exportArgs.Remove($key)
+    }
+}
 
 if ($PSCmdlet.ShouldProcess("$($archive.ArchiveName) [$($archive.ArchiveId)]", "Export-EVArchive -> $targetDir")) {
     New-Item -ItemType Directory -Path $targetDir -Force | Out-Null
