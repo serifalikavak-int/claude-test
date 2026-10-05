@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Arctera (Veritas) Enterprise Vault: kullanıcının adı soyadından arşivini bulur ve export'u başlatır.
 
@@ -53,17 +53,16 @@ function Get-NormalizedText {
     param([string]$Text)
     if ([string]::IsNullOrWhiteSpace($Text)) { return '' }
 
-    # Türkçe ı/İ, NFD ile ayrışmadığı için önce elle çevrilir
-    $t = $Text.Replace('ı', 'i').Replace('İ', 'I')
-    $t = $t.Normalize([Text.NormalizationForm]::FormD)
-    $sb = New-Object System.Text.StringBuilder
-    foreach ($ch in $t.ToCharArray()) {
-        if ([Globalization.CharUnicodeInfo]::GetUnicodeCategory($ch) -ne [Globalization.UnicodeCategory]::NonSpacingMark) {
-            [void]$sb.Append($ch)
-        }
-    }
-    # Noktalama -> boşluk, çoklu boşlukları tekle
-    $t = $sb.ToString().ToLowerInvariant() -replace '[^a-z0-9]+', ' '
+    # Türkçe karakterleri ASCII karşılıklarına çevir (ı/İ, ş, ğ, ü, ö, ç)
+    # Karakter kodlarıyla yazıldı; dosya hangi kodlamayla okunursa okunsun doğru çalışır
+    $map = @(
+        @(0x0131, 'i'), @(0x0130, 'i'), @(0x015F, 's'), @(0x015E, 's'),
+        @(0x011F, 'g'), @(0x011E, 'g'), @(0x00FC, 'u'), @(0x00DC, 'u'),
+        @(0x00F6, 'o'), @(0x00D6, 'o'), @(0x00E7, 'c'), @(0x00C7, 'c')
+    )
+    $t = $Text
+    foreach ($pair in $map) { $t = $t.Replace([string][char]$pair[0], $pair[1]) }
+    $t = $t.ToLowerInvariant() -replace '[^a-z0-9]+', ' '
     return $t.Trim()
 }
 
@@ -96,7 +95,7 @@ Import-EVPowerShell
 # --- 2. Arşivi bul -------------------------------------------------------------
 $search = Get-NormalizedText $AdSoyad
 $tokens = @($search -split ' ' | Where-Object { $_ })
-if ($tokens.Count -eq 0) { throw 'Geçerli bir ad soyad girin.' }
+if ($tokens.Count -eq 0) { throw "Geçerli bir ad soyad girin. (Gelen değer: '$AdSoyad')" }
 
 Write-Host "Arşivler taranıyor: '$AdSoyad' ..." -ForegroundColor Cyan
 
